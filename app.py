@@ -23,22 +23,50 @@ def get_file_id(url):
     return match.group(1) if match else None
 
 def download_gdrive(url, filename):
-    file_id      = get_file_id(url)
-    direct_url   = f"https://drive.google.com/uc?export=download&id={file_id}"
-    session      = requests.Session()
-    response     = session.get(direct_url, stream=True, timeout=30)
+    file_id    = get_file_id(url)
+    session    = requests.Session()
+    direct_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+    response   = session.get(direct_url, stream=True, timeout=30)
+
+    confirm_token = None
     for key, value in response.cookies.items():
         if 'download_warning' in key:
-            response = session.get(
-                direct_url,
-                params  = {'confirm': value},
-                stream  = True,
-                timeout = 30
-            )
+            confirm_token = value
+            break
+
+    if confirm_token is None:
+        for key, value in response.cookies.items():
+            if key.startswith('download_warning'):
+                confirm_token = value
+                break
+
+    if confirm_token:
+        params   = {'id': file_id, 'confirm': confirm_token, 'export': 'download'}
+        response = session.get(
+            "https://drive.google.com/uc",
+            params=params, stream=True, timeout=30)
+
+    content = b""
+    for chunk in response.iter_content(chunk_size=32768):
+        if chunk:
+            content += chunk
+
+    if content[:5] == b'<!DOC' or content[:6] == b'<html>':
+        import urllib.parse
+        soup_match = re.search(
+            r'href="(/uc\?export=download[^"]+confirm=[^"]+)"',
+            content.decode('utf-8', errors='ignore'))
+        if soup_match:
+            confirm_url = "https://drive.google.com" + \
+                          soup_match.group(1).replace('&amp;', '&')
+            response    = session.get(confirm_url, stream=True, timeout=30)
+            content     = b""
+            for chunk in response.iter_content(chunk_size=32768):
+                if chunk:
+                    content += chunk
+
     with open(filename, 'wb') as f:
-        for chunk in response.iter_content(chunk_size=32768):
-            if chunk:
-                f.write(chunk)
+        f.write(content)
 
 @st.cache_data(ttl=3600)
 def load_data():
