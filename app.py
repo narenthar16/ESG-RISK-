@@ -5,8 +5,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
 import json
-import gdown
-import os
+import requests
+import re
 
 st.set_page_config(
     page_title="ESG Risk Monitor",
@@ -14,72 +14,43 @@ st.set_page_config(
     layout="wide",
 )
 
-st.markdown("""
-<style>
-    .main { background-color: #0e1117; }
-    .metric-card {
-        background: #1e2130;
-        padding: 20px;
-        border-radius: 10px;
-        text-align: center;
-    }
-</style>
-""", unsafe_allow_html=True)
-
 GDRIVE_GOLD_URL    = "https://drive.google.com/file/d/1BsABOumGzIDEawnQsUsJGsVToZHMO0Wj/view?usp=sharing"
 GDRIVE_SECTOR_URL  = "https://drive.google.com/file/d/1f5ubf3GnANojoSI0M14Llmd0bCNyYRd_/view?usp=sharing"
 GDRIVE_METRICS_URL = "https://drive.google.com/file/d/1cHAepmIYGdHs7vkzgZ4-H1KJ3DzWlcHl/view?usp=sharing"
 
-def extract_file_id(url):
-    import re
+def get_file_id(url):
     match = re.search(r'/file/d/([a-zA-Z0-9_-]+)', url)
     return match.group(1) if match else None
 
-@st.cache_data(ttl=3600)
-def load_data():
-    try:
-        def get_direct_url(share_url):
-    import re
-    file_id = re.search(r'/file/d/([a-zA-Z0-9_-]+)', share_url)
-    if file_id:
-        return f"https://drive.google.com/uc?export=download&id={file_id.group(1)}"
-    return share_url
+def download_gdrive(url, filename):
+    file_id      = get_file_id(url)
+    direct_url   = f"https://drive.google.com/uc?export=download&id={file_id}"
+    session      = requests.Session()
+    response     = session.get(direct_url, stream=True, timeout=30)
+    for key, value in response.cookies.items():
+        if 'download_warning' in key:
+            response = session.get(
+                direct_url,
+                params  = {'confirm': value},
+                stream  = True,
+                timeout = 30
+            )
+    with open(filename, 'wb') as f:
+        for chunk in response.iter_content(chunk_size=32768):
+            if chunk:
+                f.write(chunk)
 
 @st.cache_data(ttl=3600)
 def load_data():
     try:
-        import requests
-
-        def download_gdrive(share_url, filename):
-            direct_url = get_direct_url(share_url)
-            session    = requests.Session()
-            response   = session.get(direct_url, stream=True, timeout=30)
-
-            for key, value in response.cookies.items():
-                if 'download_warning' in key:
-                    response = session.get(
-                        direct_url,
-                        params  = {'confirm': value},
-                        stream  = True,
-                        timeout = 30
-                    )
-
-            with open(filename, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=32768):
-                    if chunk:
-                        f.write(chunk)
-
         download_gdrive(GDRIVE_GOLD_URL,    "gold.csv")
         download_gdrive(GDRIVE_SECTOR_URL,  "sector.csv")
         download_gdrive(GDRIVE_METRICS_URL, "metrics.json")
-
         gold   = pd.read_csv("gold.csv")
         sector = pd.read_csv("sector.csv")
         with open("metrics.json") as f:
             metrics = json.load(f)
-
         return gold, sector, metrics
-
     except Exception as e:
         st.error(f"Error loading data: {e}")
         return None, None, None
@@ -96,14 +67,13 @@ if gold is not None:
     n_med   = int(vc.get("Medium",0))
     n_high  = int(vc.get("High",  0))
     avg_esg = gold["total_esg_score"].mean()
-    avg_risk= gold["risk_score"].mean()
 
     col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Total Companies",  len(gold))
-    col2.metric("Avg ESG Score",    f"{avg_esg:.1f}")
-    col3.metric("Low Risk",         n_low,  f"{n_low/len(gold)*100:.0f}%")
-    col4.metric("Medium Risk",      n_med,  f"{n_med/len(gold)*100:.0f}%")
-    col5.metric("High Risk",        n_high, f"{n_high/len(gold)*100:.0f}%")
+    col1.metric("Total Companies", len(gold))
+    col2.metric("Avg ESG Score",   f"{avg_esg:.1f}")
+    col3.metric("Low Risk",        n_low,  f"{n_low/len(gold)*100:.0f}%")
+    col4.metric("Medium Risk",     n_med,  f"{n_med/len(gold)*100:.0f}%")
+    col5.metric("High Risk",       n_high, f"{n_high/len(gold)*100:.0f}%")
 
     st.markdown("---")
 
@@ -125,7 +95,6 @@ if gold is not None:
                 plot_bgcolor ="rgba(0,0,0,0)",
                 font=dict(color="white"))
             st.plotly_chart(fig, use_container_width=True)
-
         with col2:
             fig = px.scatter(
                 gold, x="total_esg_score", y="risk_score",
@@ -150,7 +119,6 @@ if gold is not None:
                 plot_bgcolor ="rgba(0,0,0,0)",
                 font=dict(color="white"))
             st.plotly_chart(fig, use_container_width=True)
-
         with col4:
             fig = px.histogram(
                 gold, x="risk_score", color="risk_label",
@@ -189,16 +157,16 @@ if gold is not None:
         col6.metric("Governance",    f"{row['governance_score']:.1f}")
 
         fig = go.Figure(go.Indicator(
-            mode="gauge+number",
-            value=float(row["risk_score"]),
-            title={"text": f"{ticker} Risk Score"},
-            gauge={
+            mode  = "gauge+number",
+            value = float(row["risk_score"]),
+            title = {"text": f"{ticker} Risk Score"},
+            gauge = {
                 "axis":  {"range":[0,100]},
                 "bar":   {"color":"#2c3e50"},
-                "steps":[
-                    {"range":[0, 35], "color":"#27ae60"},
-                    {"range":[35,65], "color":"#f39c12"},
-                    {"range":[65,100],"color":"#e74c3c"},
+                "steps": [
+                    {"range":[0,  35], "color":"#27ae60"},
+                    {"range":[35, 65], "color":"#f39c12"},
+                    {"range":[65,100], "color":"#e74c3c"},
                 ],
             }))
         fig.update_layout(
@@ -242,7 +210,6 @@ if gold is not None:
                     font=dict(color="white"),
                     xaxis_tickangle=-45)
                 st.plotly_chart(fig, use_container_width=True)
-
             with col2:
                 fig = px.scatter(
                     sector,
@@ -266,22 +233,33 @@ if gold is not None:
             reg = metrics.get("regression",{})
             cls = metrics.get("classification",{})
             cv  = metrics.get("cross_validation",{})
+            acc = metrics.get("accuracy",{})
+
+            st.subheader("Dataset Split")
+            col1, col2 = st.columns(2)
+            col1.metric("Training Set", f"80%")
+            col2.metric("Testing Set",  f"20%")
+
+            st.subheader("Accuracy")
+            col1, col2 = st.columns(2)
+            col1.metric("Training Accuracy", f"{float(acc.get('train_accuracy', 0))*100:.2f}%")
+            col2.metric("Testing Accuracy",  f"{float(acc.get('test_accuracy',  0))*100:.2f}%")
 
             st.subheader("Regression Metrics")
             col1, col2, col3 = st.columns(3)
-            col1.metric("MSE",  reg.get("mse","N/A"))
-            col2.metric("RMSE", reg.get("rmse","N/A"))
-            col3.metric("MAE",  reg.get("mae","N/A"))
+            col1.metric("MSE",  reg.get("mse",  "N/A"))
+            col2.metric("RMSE", reg.get("rmse", "N/A"))
+            col3.metric("MAE",  reg.get("mae",  "N/A"))
 
             st.subheader("Classification Metrics")
             col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Precision", cls.get("precision_macro","N/A"))
-            col2.metric("Recall",    cls.get("recall_macro","N/A"))
-            col3.metric("F1-Score",  cls.get("f1_macro","N/A"))
-            col4.metric("CV F1",     cv.get("cv_f1_macro_mean","N/A"))
+            col1.metric("Precision", cls.get("precision_macro", "N/A"))
+            col2.metric("Recall",    cls.get("recall_macro",    "N/A"))
+            col3.metric("F1-Score",  cls.get("test_f1_macro",   "N/A"))
+            col4.metric("CV F1",     cv.get("cv_f1_macro_mean", "N/A"))
 
             st.subheader("Confusion Matrix")
-            cm   = np.array(cls.get("confusion_matrix",[]))
+            cm   = np.array(cls.get("confusion_matrix", []))
             labs = ["Low","Medium","High"]
             if len(cm) > 0:
                 fig = px.imshow(cm, text_auto=True,
