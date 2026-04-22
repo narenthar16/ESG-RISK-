@@ -26,9 +26,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-GDRIVE_GOLD_URL    = "YOUR_GDRIVE_GOLD_URL"
-GDRIVE_SECTOR_URL  = "YOUR_GDRIVE_SECTOR_URL"
-GDRIVE_METRICS_URL = "YOUR_GDRIVE_METRICS_URL"
+GDRIVE_GOLD_URL    = "https://drive.google.com/file/d/1BsABOumGzIDEawnQsUsJGsVToZHMO0Wj/view?usp=sharing"
+GDRIVE_SECTOR_URL  = "https://drive.google.com/file/d/1f5ubf3GnANojoSI0M14Llmd0bCNyYRd_/view?usp=sharing"
+GDRIVE_METRICS_URL = "https://drive.google.com/file/d/1cHAepmIYGdHs7vkzgZ4-H1KJ3DzWlcHl/view?usp=sharing"
 
 @st.cache_data(ttl=3600)
 def load_data():
