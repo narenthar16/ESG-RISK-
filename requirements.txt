@@ -10,4 +10,4 @@ requests
 networkx
 matplotlib
 seaborn
-gdown==4.7.3
+
