@@ -38,20 +38,48 @@ def extract_file_id(url):
 @st.cache_data(ttl=3600)
 def load_data():
     try:
-        def download_file(url, filename):
-            file_id  = extract_file_id(url)
-            download_url = f"https://drive.google.com/uc?id={file_id}"
-            gdown.download(download_url, filename, quiet=True)
+        def get_direct_url(share_url):
+    import re
+    file_id = re.search(r'/file/d/([a-zA-Z0-9_-]+)', share_url)
+    if file_id:
+        return f"https://drive.google.com/uc?export=download&id={file_id.group(1)}"
+    return share_url
 
-        download_file(GDRIVE_GOLD_URL,    "gold.csv")
-        download_file(GDRIVE_SECTOR_URL,  "sector.csv")
-        download_file(GDRIVE_METRICS_URL, "metrics.json")
+@st.cache_data(ttl=3600)
+def load_data():
+    try:
+        import requests
+
+        def download_gdrive(share_url, filename):
+            direct_url = get_direct_url(share_url)
+            session    = requests.Session()
+            response   = session.get(direct_url, stream=True, timeout=30)
+
+            for key, value in response.cookies.items():
+                if 'download_warning' in key:
+                    response = session.get(
+                        direct_url,
+                        params  = {'confirm': value},
+                        stream  = True,
+                        timeout = 30
+                    )
+
+            with open(filename, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=32768):
+                    if chunk:
+                        f.write(chunk)
+
+        download_gdrive(GDRIVE_GOLD_URL,    "gold.csv")
+        download_gdrive(GDRIVE_SECTOR_URL,  "sector.csv")
+        download_gdrive(GDRIVE_METRICS_URL, "metrics.json")
 
         gold   = pd.read_csv("gold.csv")
         sector = pd.read_csv("sector.csv")
         with open("metrics.json") as f:
             metrics = json.load(f)
+
         return gold, sector, metrics
+
     except Exception as e:
         st.error(f"Error loading data: {e}")
         return None, None, None
