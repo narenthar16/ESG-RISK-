@@ -5,6 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
 import json
+import io
 import requests
 import re
 
@@ -14,30 +15,37 @@ st.set_page_config(
     layout="wide",
 )
 
-GDRIVE_GOLD_URL    = "https://drive.google.com/file/d/1BsABOumGzIDEawnQsUsJGsVToZHMO0Wj/view?usp=sharing"
-GDRIVE_SECTOR_URL  = "https://drive.google.com/file/d/1f5ubf3GnANojoSI0M14Llmd0bCNyYRd_/view?usp=sharing"
-GDRIVE_METRICS_URL = "https://drive.google.com/file/d/1cHAepmIYGdHs7vkzgZ4-H1KJ3DzWlcHl/view?usp=sharing"
+GOLD_ID    = "1BsABOumGzIDEawnQsUsJGsVToZHMO0Wj"
+SECTOR_ID  = "1f5ubf3GnANojoSI0M14Llmd0bCNyYRd_"
+METRICS_ID = "1cHAepmIYGdHs7vkzgZ4-H1KJ3DzWlcHl"
 
-def get_file_id(url):
-    match = re.search(r'/file/d/([a-zA-Z0-9_-]+)', url)
-    return match.group(1) if match else None
-
-def download_gdrive(url, filename):
-    file_id      = get_file_id(url)
-    download_url = f"https://drive.google.com/uc?id={file_id}"
-    import gdown
-    gdown.download(download_url, filename, quiet=True)
+def download_file(file_id):
+    url     = f"https://drive.google.com/uc?export=download&id={file_id}&confirm=t"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    session = requests.Session()
+    r       = session.get(url, headers=headers, timeout=60)
+    if "text/html" in r.headers.get("Content-Type",""):
+        token = None
+        for k, v in r.cookies.items():
+            if "download_warning" in k:
+                token = v
+        if token:
+            r = session.get(
+                f"https://drive.google.com/uc?export=download&id={file_id}&confirm={token}",
+                headers=headers, timeout=60)
+    return r.content
 
 @st.cache_data(ttl=3600)
 def load_data():
     try:
-        download_gdrive(GDRIVE_GOLD_URL,    "gold.csv")
-        download_gdrive(GDRIVE_SECTOR_URL,  "sector.csv")
-        download_gdrive(GDRIVE_METRICS_URL, "metrics.json")
-        gold   = pd.read_csv("gold.csv")
-        sector = pd.read_csv("sector.csv")
-        with open("metrics.json") as f:
-            metrics = json.load(f)
+        gold_bytes    = download_file(GOLD_ID)
+        sector_bytes  = download_file(SECTOR_ID)
+        metrics_bytes = download_file(METRICS_ID)
+
+        gold   = pd.read_csv(io.BytesIO(gold_bytes))
+        sector = pd.read_csv(io.BytesIO(sector_bytes))
+        metrics= json.loads(metrics_bytes.decode("utf-8"))
+
         return gold, sector, metrics
     except Exception as e:
         st.error(f"Error loading data: {e}")
@@ -98,7 +106,8 @@ if gold is not None:
 
         col3, col4 = st.columns(2)
         with col3:
-            country_risk = gold.groupby(["country","risk_label"]).size().unstack(fill_value=0)
+            country_risk = gold.groupby(
+                ["country","risk_label"]).size().unstack(fill_value=0)
             fig = px.bar(country_risk, barmode="stack",
                          color_discrete_map=RISK_COLORS,
                          title="Risk Distribution by Country")
@@ -121,9 +130,11 @@ if gold is not None:
     with tab2:
         col1, col2 = st.columns(2)
         with col1:
-            country_filter = st.selectbox("Country", ["All"] + sorted(gold["country"].unique()))
+            country_filter = st.selectbox(
+                "Country", ["All"] + sorted(gold["country"].unique()))
         with col2:
-            sector_filter  = st.selectbox("Sector",  ["All"] + sorted(gold["sector"].unique()))
+            sector_filter  = st.selectbox(
+                "Sector",  ["All"] + sorted(gold["sector"].unique()))
 
         filtered = gold.copy()
         if country_filter != "All":
@@ -131,7 +142,8 @@ if gold is not None:
         if sector_filter != "All":
             filtered = filtered[filtered["sector"]==sector_filter]
 
-        ticker = st.selectbox("Select Company", sorted(filtered["ticker"].unique()))
+        ticker = st.selectbox("Select Company",
+                              sorted(filtered["ticker"].unique()))
         row    = filtered[filtered["ticker"]==ticker].iloc[0]
 
         col1, col2, col3 = st.columns(3)
@@ -163,10 +175,11 @@ if gold is not None:
         st.plotly_chart(fig, use_container_width=True)
 
         st.subheader("All Companies")
+        show_cols = [c for c in ["ticker","country","sector","risk_label",
+                                  "risk_score","total_esg_score","esg_rating",
+                                  "action","alert"] if c in filtered.columns]
         st.dataframe(
-            filtered[["ticker","country","sector","risk_label",
-                       "risk_score","total_esg_score","esg_rating",
-                       "action","alert"]].sort_values("risk_score"),
+            filtered[show_cols].sort_values("risk_score"),
             use_container_width=True)
 
     with tab3:
@@ -191,7 +204,7 @@ if gold is not None:
                     x="sector", y="pct_high_risk",
                     color="pct_high_risk",
                     color_continuous_scale="Reds",
-                    title="% High Risk Companies by Sector")
+                    title="% High Risk by Sector")
                 fig.update_layout(
                     paper_bgcolor="rgba(0,0,0,0)",
                     plot_bgcolor ="rgba(0,0,0,0)",
@@ -213,7 +226,7 @@ if gold is not None:
                     font=dict(color="white"))
                 st.plotly_chart(fig, use_container_width=True)
 
-            st.subheader("Sector Summary Table")
+            st.subheader("Sector Summary")
             st.dataframe(sector, use_container_width=True)
 
     with tab4:
@@ -225,13 +238,16 @@ if gold is not None:
 
             st.subheader("Dataset Split")
             col1, col2 = st.columns(2)
-            col1.metric("Training Set", f"80%")
-            col2.metric("Testing Set",  f"20%")
+            col1.metric("Training Set", "80%")
+            col2.metric("Testing Set",  "20%")
 
-            st.subheader("Accuracy")
-            col1, col2 = st.columns(2)
-            col1.metric("Training Accuracy", f"{float(acc.get('train_accuracy', 0))*100:.2f}%")
-            col2.metric("Testing Accuracy",  f"{float(acc.get('test_accuracy',  0))*100:.2f}%")
+            if acc:
+                st.subheader("Accuracy")
+                col1, col2 = st.columns(2)
+                col1.metric("Training Accuracy",
+                            f"{float(acc.get('train_accuracy',0))*100:.2f}%")
+                col2.metric("Testing Accuracy",
+                            f"{float(acc.get('test_accuracy', 0))*100:.2f}%")
 
             st.subheader("Regression Metrics")
             col1, col2, col3 = st.columns(3)
@@ -241,15 +257,20 @@ if gold is not None:
 
             st.subheader("Classification Metrics")
             col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Precision", cls.get("precision_macro", "N/A"))
-            col2.metric("Recall",    cls.get("recall_macro",    "N/A"))
-            col3.metric("F1-Score",  cls.get("test_f1_macro",   "N/A"))
-            col4.metric("CV F1",     cv.get("cv_f1_macro_mean", "N/A"))
+            col1.metric("Precision",
+                        cls.get("precision_macro", "N/A"))
+            col2.metric("Recall",
+                        cls.get("recall_macro",    "N/A"))
+            col3.metric("F1-Score",
+                        cls.get("test_f1_macro",
+                        cls.get("f1_macro",        "N/A")))
+            col4.metric("CV F1",
+                        cv.get("cv_f1_macro_mean", "N/A"))
 
-            st.subheader("Confusion Matrix")
-            cm   = np.array(cls.get("confusion_matrix", []))
+            cm   = np.array(cls.get("confusion_matrix",[]))
             labs = ["Low","Medium","High"]
             if len(cm) > 0:
+                st.subheader("Confusion Matrix")
                 fig = px.imshow(cm, text_auto=True,
                                 x=labs, y=labs,
                                 color_continuous_scale="Blues",
@@ -261,31 +282,34 @@ if gold is not None:
 
     with tab5:
         st.subheader("Portfolio Recommendations")
-
         col1, col2 = st.columns(2)
         with col1:
-            st.success("BUY / HOLD — Low Risk Companies")
-            low_risk = gold[gold["risk_label"]=="Low"].nsmallest(10,"risk_score")
-            for _, row in low_risk.iterrows():
-                st.write(f"✅ **{row['ticker']}** — Score: {row['risk_score']:.2f} — {row['country']}")
-
+            st.success("BUY / HOLD — Low Risk")
+            low_df = gold[gold["risk_label"]=="Low"].nsmallest(10,"risk_score")
+            for _, row in low_df.iterrows():
+                st.write(f"✅ **{row['ticker']}** — "
+                         f"Score: {row['risk_score']:.2f} — {row['country']}")
         with col2:
-            st.error("SELL / DIVEST — High Risk Companies")
-            high_risk = gold[gold["risk_label"]=="High"].nlargest(10,"risk_score")
-            if len(high_risk) > 0:
-                for _, row in high_risk.iterrows():
-                    st.write(f"🚨 **{row['ticker']}** — Score: {row['risk_score']:.2f} — {row['country']}")
+            st.error("SELL / DIVEST — High Risk")
+            high_df = gold[gold["risk_label"]=="High"].nlargest(10,"risk_score")
+            if len(high_df) > 0:
+                for _, row in high_df.iterrows():
+                    st.write(f"🚨 **{row['ticker']}** — "
+                             f"Score: {row['risk_score']:.2f} — {row['country']}")
             else:
                 st.write("No High Risk companies today")
 
         st.warning("MONITOR — Top 10 Medium Risk")
-        med_risk = gold[gold["risk_label"]=="Medium"].nlargest(10,"risk_score")
-        for _, row in med_risk.iterrows():
-            st.write(f"⚠️ **{row['ticker']}** — Score: {row['risk_score']:.2f} — {row['sector']} — {row['country']}")
+        med_df = gold[gold["risk_label"]=="Medium"].nlargest(10,"risk_score")
+        for _, row in med_df.iterrows():
+            st.write(f"⚠️ **{row['ticker']}** — "
+                     f"Score: {row['risk_score']:.2f} — "
+                     f"{row['sector']} — {row['country']}")
 
 else:
     st.warning("Data not loaded. Please check Google Drive links.")
 
 st.markdown("---")
-st.caption(f"Last updated: {datetime.today().strftime('%Y-%m-%d %H:%M')} | "
-           f"Real-Time ESG Risk Scoring System | MIT M.Tech Project")
+st.caption(
+    f"Last updated: {datetime.today().strftime('%Y-%m-%d %H:%M')} | "
+    f"Real-Time ESG Risk Scoring System | MIT M.Tech Project")
