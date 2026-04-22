@@ -30,12 +30,23 @@ GDRIVE_GOLD_URL    = "https://drive.google.com/file/d/1BsABOumGzIDEawnQsUsJGsVTo
 GDRIVE_SECTOR_URL  = "https://drive.google.com/file/d/1f5ubf3GnANojoSI0M14Llmd0bCNyYRd_/view?usp=sharing"
 GDRIVE_METRICS_URL = "https://drive.google.com/file/d/1cHAepmIYGdHs7vkzgZ4-H1KJ3DzWlcHl/view?usp=sharing"
 
+def extract_file_id(url):
+    import re
+    match = re.search(r'/file/d/([a-zA-Z0-9_-]+)', url)
+    return match.group(1) if match else None
+
 @st.cache_data(ttl=3600)
 def load_data():
     try:
-        gdown.download(GDRIVE_GOLD_URL,    "gold.csv",    quiet=True, fuzzy=True)
-        gdown.download(GDRIVE_SECTOR_URL,  "sector.csv",  quiet=True, fuzzy=True)
-        gdown.download(GDRIVE_METRICS_URL, "metrics.json",quiet=True, fuzzy=True)
+        def download_file(url, filename):
+            file_id  = extract_file_id(url)
+            download_url = f"https://drive.google.com/uc?id={file_id}"
+            gdown.download(download_url, filename, quiet=True)
+
+        download_file(GDRIVE_GOLD_URL,    "gold.csv")
+        download_file(GDRIVE_SECTOR_URL,  "sector.csv")
+        download_file(GDRIVE_METRICS_URL, "metrics.json")
+
         gold   = pd.read_csv("gold.csv")
         sector = pd.read_csv("sector.csv")
         with open("metrics.json") as f:
