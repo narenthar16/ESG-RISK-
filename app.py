@@ -5,9 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
 import json
-import io
 import requests
-import re
 
 st.set_page_config(
     page_title="ESG Risk Monitor",
@@ -15,37 +13,14 @@ st.set_page_config(
     layout="wide",
 )
 
-GOLD_ID    = "1BsABOumGzIDEawnQsUsJGsVToZHMO0Wj"
-SECTOR_ID  = "1f5ubf3GnANojoSI0M14Llmd0bCNyYRd_"
-METRICS_ID = "1cHAepmIYGdHs7vkzgZ4-H1KJ3DzWlcHl"
-
-def download_file(file_id):
-    url     = f"https://drive.google.com/uc?export=download&id={file_id}&confirm=t"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    session = requests.Session()
-    r       = session.get(url, headers=headers, timeout=60)
-    if "text/html" in r.headers.get("Content-Type",""):
-        token = None
-        for k, v in r.cookies.items():
-            if "download_warning" in k:
-                token = v
-        if token:
-            r = session.get(
-                f"https://drive.google.com/uc?export=download&id={file_id}&confirm={token}",
-                headers=headers, timeout=60)
-    return r.content
+GITHUB_RAW = "https://raw.githubusercontent.com/narenthar16/ESG-RISK-/main/"
 
 @st.cache_data(ttl=3600)
 def load_data():
     try:
-        gold_bytes    = download_file(GOLD_ID)
-        sector_bytes  = download_file(SECTOR_ID)
-        metrics_bytes = download_file(METRICS_ID)
-
-        gold   = pd.read_csv(io.BytesIO(gold_bytes))
-        sector = pd.read_csv(io.BytesIO(sector_bytes))
-        metrics= json.loads(metrics_bytes.decode("utf-8"))
-
+        gold    = pd.read_csv(GITHUB_RAW + "esg_risk_gold.csv")
+        sector  = pd.read_csv(GITHUB_RAW + "sector_aggregation.csv")
+        metrics = requests.get(GITHUB_RAW + "evaluation_metrics.json").json()
         return gold, sector, metrics
     except Exception as e:
         st.error(f"Error loading data: {e}")
@@ -58,11 +33,11 @@ st.caption("Cloud Lakehouse Architecture · GNN + Random Forest · 364 Companies
 
 if gold is not None:
     RISK_COLORS = {"Low":"#27ae60","Medium":"#f39c12","High":"#e74c3c"}
-    vc      = gold["risk_label"].value_counts()
-    n_low   = int(vc.get("Low",   0))
-    n_med   = int(vc.get("Medium",0))
-    n_high  = int(vc.get("High",  0))
-    avg_esg = gold["total_esg_score"].mean()
+    vc     = gold["risk_label"].value_counts()
+    n_low  = int(vc.get("Low",   0))
+    n_med  = int(vc.get("Medium",0))
+    n_high = int(vc.get("High",  0))
+    avg_esg= gold["total_esg_score"].mean()
 
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Total Companies", len(gold))
@@ -133,7 +108,7 @@ if gold is not None:
             country_filter = st.selectbox(
                 "Country", ["All"] + sorted(gold["country"].unique()))
         with col2:
-            sector_filter  = st.selectbox(
+            sector_filter = st.selectbox(
                 "Sector",  ["All"] + sorted(gold["sector"].unique()))
 
         filtered = gold.copy()
@@ -174,10 +149,10 @@ if gold is not None:
             font=dict(color="white"))
         st.plotly_chart(fig, use_container_width=True)
 
-        st.subheader("All Companies")
         show_cols = [c for c in ["ticker","country","sector","risk_label",
                                   "risk_score","total_esg_score","esg_rating",
                                   "action","alert"] if c in filtered.columns]
+        st.subheader("All Companies")
         st.dataframe(
             filtered[show_cols].sort_values("risk_score"),
             use_container_width=True)
@@ -257,17 +232,13 @@ if gold is not None:
 
             st.subheader("Classification Metrics")
             col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Precision",
-                        cls.get("precision_macro", "N/A"))
-            col2.metric("Recall",
-                        cls.get("recall_macro",    "N/A"))
-            col3.metric("F1-Score",
-                        cls.get("test_f1_macro",
-                        cls.get("f1_macro",        "N/A")))
-            col4.metric("CV F1",
-                        cv.get("cv_f1_macro_mean", "N/A"))
+            col1.metric("Precision", cls.get("precision_macro", "N/A"))
+            col2.metric("Recall",    cls.get("recall_macro",    "N/A"))
+            col3.metric("F1-Score",  cls.get("test_f1_macro",
+                        cls.get("f1_macro",                     "N/A")))
+            col4.metric("CV F1",     cv.get("cv_f1_macro_mean", "N/A"))
 
-            cm   = np.array(cls.get("confusion_matrix",[]))
+            cm   = np.array(cls.get("confusion_matrix", []))
             labs = ["Low","Medium","High"]
             if len(cm) > 0:
                 st.subheader("Confusion Matrix")
@@ -307,7 +278,7 @@ if gold is not None:
                      f"{row['sector']} — {row['country']}")
 
 else:
-    st.warning("Data not loaded. Please check Google Drive links.")
+    st.warning("Data not loaded. Please check GitHub repository.")
 
 st.markdown("---")
 st.caption(
