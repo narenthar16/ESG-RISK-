@@ -1,0 +1,44 @@
+{
+  "split": {
+    "train_samples": 356,
+    "test_samples": 89
+  },
+  "accuracy": {
+    "train_accuracy": 0.8989,
+    "test_accuracy": 0.8876
+  },
+  "regression": {
+    "mse": 65.9938,
+    "rmse": 8.1237,
+    "mae": 6.4875
+  },
+  "classification": {
+    "train_f1": 0.8761,
+    "test_f1_macro": 0.8598,
+    "precision_macro": 0.8918,
+    "recall_macro": 0.8718,
+    "confusion_matrix": [
+      [
+        43,
+        0,
+        0
+      ],
+      [
+        3,
+        16,
+        7
+      ],
+      [
+        0,
+        0,
+        20
+      ]
+    ]
+  },
+  "cross_validation": {
+    "cv_f1_macro_mean": 0.8518,
+    "cv_f1_macro_std": 0.0635,
+    "cv_precision_macro": 0.8772,
+    "cv_recall_macro": 0.8653
+  }
+}
