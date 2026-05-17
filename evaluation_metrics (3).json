@@ -17,27 +17,11 @@
     "test_f1_macro": 0.9582,
     "precision_macro": 0.9639,
     "recall_macro": 0.9538,
-    "confusion_matrix": [
-      [
-        42,
-        1,
-        0
-      ],
-      [
-        3,
-        23,
-        0
-      ],
-      [
-        0,
-        0,
-        20
-      ]
-    ]
+    "confusion_matrix": [[42, 1, 0], [3, 23, 0], [0, 0, 20]]
   },
   "cross_validation": {
     "cv_f1_macro_mean": 0.9562,
-    "cv_f1_macro_std": 0.022,
+    "cv_f1_macro_std": 0.0220,
     "cv_precision_macro": 0.9639,
     "cv_recall_macro": 0.9538
   }
