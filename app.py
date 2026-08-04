@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 import json
 import requests
+import yfinance as yf
 
 st.set_page_config(
     page_title="ESG Risk Monitor",
@@ -18,23 +19,62 @@ GITHUB_RAW = "https://raw.githubusercontent.com/narenthar16/ESG-RISK-/main/"
 @st.cache_data(ttl=60)
 def load_data():
     try:
-        gold_resp    = requests.get(GITHUB_RAW + "esg_risk_gold.csv",    timeout=30)
-        sector_resp  = requests.get(GITHUB_RAW + "sector_aggregation.csv", timeout=30)
+        gold_resp    = requests.get(GITHUB_RAW + "esg_risk_gold.csv",       timeout=30)
+        sector_resp  = requests.get(GITHUB_RAW + "sector_aggregation.csv",  timeout=30)
         metrics_resp = requests.get(GITHUB_RAW + "evaluation_metrics.json", timeout=30)
-
         gold    = pd.read_csv(pd.io.common.StringIO(gold_resp.text))
         sector  = pd.read_csv(pd.io.common.StringIO(sector_resp.text))
         metrics = metrics_resp.json()
-
         return gold, sector, metrics
     except Exception as e:
         st.error(f"Error loading data: {e}")
         return None, None, None
 
-gold, sector, metrics = load_data()
+@st.cache_data(ttl=60)
+def get_live_prices():
+    tickers = ["AAPL","MSFT","JPM","XOM","JNJ",
+                "BP.L","AZN.L","TCS.NS","INFY.NS","RELIANCE.NS"]
+    prices = []
+    for t in tickers:
+        try:
+            info  = yf.Ticker(t).fast_info
+            price = round(float(info['lastPrice']), 2)
+            prev  = round(float(info['previousClose']), 2)
+            chg   = round(price - prev, 2)
+            pct   = round((chg / prev) * 100, 2)
+            prices.append({"Ticker": t, "Price": price,
+                           "Change": chg, "Pct": pct})
+        except:
+            prices.append({"Ticker": t, "Price": "N/A",
+                           "Change": 0, "Pct": 0})
+    return prices
 
-st.title("🌱 Real-Time ESG Risk Monitor")
+gold, sector, metrics = load_data()
+live_prices = get_live_prices()
+
+st.title("Real-Time ESG Risk Monitor")
 st.caption("Cloud Lakehouse Architecture · GNN + Random Forest · 364 Companies · USA, UK, India")
+
+# ── LIVE MARKET PRICES ────────────────────────────────────────────────────────
+st.subheader("Live Market Prices")
+cols1 = st.columns(5)
+for i, item in enumerate(live_prices[:5]):
+    chg = item['Change']
+    pct = item['Pct']
+    delta = f"{chg:+.2f} ({pct:+.2f}%)" if isinstance(chg, float) else "N/A"
+    val   = f"${item['Price']}"          if isinstance(item['Price'], float) else "N/A"
+    cols1[i].metric(label=item['Ticker'], value=val, delta=delta)
+
+cols2 = st.columns(5)
+for i, item in enumerate(live_prices[5:]):
+    chg = item['Change']
+    pct = item['Pct']
+    delta = f"{chg:+.2f} ({pct:+.2f}%)" if isinstance(chg, float) else "N/A"
+    val   = f"${item['Price']}"          if isinstance(item['Price'], float) else "N/A"
+    cols2[i].metric(label=item['Ticker'], value=val, delta=delta)
+
+st.caption(f"Prices refresh every 60 seconds · Last updated: {datetime.now().strftime('%H:%M:%S')}")
+st.markdown("---")
 
 if gold is not None:
     RISK_COLORS = {"Low":"#27ae60","Medium":"#f39c12","High":"#e74c3c"}
@@ -64,7 +104,8 @@ if gold is not None:
                 labels=vc.index, values=vc.values, hole=0.55,
                 marker_colors=[RISK_COLORS.get(l,"#999") for l in vc.index]))
             fig.update_layout(title="ESG Risk Distribution",
-                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor ="rgba(0,0,0,0)",
                 font=dict(color="white"))
             st.plotly_chart(fig, use_container_width=True)
         with col2:
@@ -73,7 +114,7 @@ if gold is not None:
                 hover_data=["ticker","sector","country"],
                 title="ESG Score vs Risk Score")
             fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)", font=dict(color="white"))
+                plot_bgcolor ="rgba(0,0,0,0)", font=dict(color="white"))
             st.plotly_chart(fig, use_container_width=True)
 
         col3, col4 = st.columns(2)
@@ -84,14 +125,14 @@ if gold is not None:
                 color_discrete_map=RISK_COLORS,
                 title="Risk Distribution by Country")
             fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)", font=dict(color="white"))
+                plot_bgcolor ="rgba(0,0,0,0)", font=dict(color="white"))
             st.plotly_chart(fig, use_container_width=True)
         with col4:
             fig = px.histogram(gold, x="risk_score", color="risk_label",
                 color_discrete_map=RISK_COLORS, nbins=30,
                 title="Risk Score Distribution")
             fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)", font=dict(color="white"))
+                plot_bgcolor ="rgba(0,0,0,0)", font=dict(color="white"))
             st.plotly_chart(fig, use_container_width=True)
 
     with tab2:
@@ -148,7 +189,7 @@ if gold is not None:
                 color="avg_risk_score", color_continuous_scale="RdYlGn_r",
                 title="Average ESG Score by Sector")
             fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)", font=dict(color="white"))
+                plot_bgcolor ="rgba(0,0,0,0)", font=dict(color="white"))
             st.plotly_chart(fig, use_container_width=True)
 
             col1, col2 = st.columns(2)
@@ -159,7 +200,7 @@ if gold is not None:
                     color="pct_high_risk", color_continuous_scale="Reds",
                     title="% High Risk by Sector")
                 fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(0,0,0,0)", font=dict(color="white"),
+                    plot_bgcolor ="rgba(0,0,0,0)", font=dict(color="white"),
                     xaxis_tickangle=-45)
                 st.plotly_chart(fig, use_container_width=True)
             with col2:
@@ -170,7 +211,7 @@ if gold is not None:
                     color_continuous_scale="Reds",
                     title="Sector ESG vs Risk vs Carbon")
                 fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(0,0,0,0)", font=dict(color="white"))
+                    plot_bgcolor ="rgba(0,0,0,0)", font=dict(color="white"))
                 st.plotly_chart(fig, use_container_width=True)
 
             st.subheader("Sector Summary")
@@ -228,27 +269,27 @@ if gold is not None:
         st.subheader("Portfolio Recommendations")
         col1, col2 = st.columns(2)
         with col1:
-            st.success("BUY / HOLD — Low Risk")
+            st.success("BUY / HOLD — Low Risk Companies")
             low_df = gold[gold["risk_label"]=="Low"].nsmallest(10,"risk_score")
             for _, row in low_df.iterrows():
-                st.write(f"✅ **{row['ticker']}** — "
-                         f"Score: {row['risk_score']:.2f} — {row['country']}")
+                st.write(f"[BUY]  {row['ticker']}  —  "
+                         f"Score: {row['risk_score']:.2f}  —  {row['country']}")
         with col2:
-            st.error("SELL / DIVEST — High Risk")
+            st.error("SELL / DIVEST — High Risk Companies")
             high_df = gold[gold["risk_label"]=="High"].nlargest(10,"risk_score")
             if len(high_df) > 0:
                 for _, row in high_df.iterrows():
-                    st.write(f"🚨 **{row['ticker']}** — "
-                             f"Score: {row['risk_score']:.2f} — {row['country']}")
+                    st.write(f"[SELL]  {row['ticker']}  —  "
+                             f"Score: {row['risk_score']:.2f}  —  {row['country']}")
             else:
                 st.write("No High Risk companies today")
 
-        st.warning("MONITOR — Top 10 Medium Risk")
+        st.warning("MONITOR — Top 10 Medium Risk Companies")
         med_df = gold[gold["risk_label"]=="Medium"].nlargest(10,"risk_score")
         for _, row in med_df.iterrows():
-            st.write(f"⚠️ **{row['ticker']}** — "
-                     f"Score: {row['risk_score']:.2f} — "
-                     f"{row['sector']} — {row['country']}")
+            st.write(f"[MONITOR]  {row['ticker']}  —  "
+                     f"Score: {row['risk_score']:.2f}  —  "
+                     f"{row['sector']}  —  {row['country']}")
 
 else:
     st.warning("Data not loaded. Please check GitHub repository.")
